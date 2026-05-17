@@ -563,7 +563,55 @@ function renderWalletBtn() {
   return el('button', { class: 'btn-wallet', onclick: connectWallet }, '连接钱包');
 }
 
-/* ─── Wallet (mock + ethers stub) ───────────────────────────── */
+/* ─── Wallet ────────────────────────────────────────────────── */
+
+const BSC_CHAIN_PARAMS = {
+  chainId: '0x38',
+  chainName: 'BNB Smart Chain',
+  nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+  rpcUrls: ['https://bsc-dataseed.binance.org/'],
+  blockExplorerUrls: ['https://bscscan.com/'],
+};
+
+async function ensureBscChain() {
+  const cid = await window.ethereum.request({ method: 'eth_chainId' });
+  if (cid === '0x38') return true;
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: '0x38' }],
+    });
+    return true;
+  } catch (e) {
+    if (e && e.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [BSC_CHAIN_PARAMS],
+        });
+        return true;
+      } catch (e2) {
+        toast({ type: 'error', title: '请切换到 BSC 主网', sub: e2.message || String(e2) });
+        return false;
+      }
+    }
+    toast({ type: 'error', title: '请切换到 BSC 主网', sub: e.message || String(e) });
+    return false;
+  }
+}
+
+let _walletListenersBound = false;
+function bindWalletListeners() {
+  if (_walletListenersBound || !window.ethereum || !window.ethereum.on) return;
+  _walletListenersBound = true;
+  window.ethereum.on('accountsChanged', (accounts) => {
+    state.account = accounts[0] || null;
+    buildShell(); render();
+  });
+  window.ethereum.on('chainChanged', () => {
+    buildShell(); render();
+  });
+}
 
 async function connectWallet() {
   if (!window.ethereum) {
@@ -573,12 +621,8 @@ async function connectWallet() {
   try {
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     state.account = accounts[0];
-    try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x38' }],
-      });
-    } catch {}
+    bindWalletListeners();
+    await ensureBscChain();
     toast({ type: 'success', title: '钱包已连接', sub: shortAddr(state.account) });
     buildShell(); render();
   } catch (e) {
@@ -590,6 +634,38 @@ function disconnectWallet() {
   state.account = null;
   toast({ type: 'info', title: '已断开连接' });
   buildShell(); render();
+}
+
+// Run any on-chain action with the user's signer. Handles chain check + error mapping.
+async function withSigner(label, fn) {
+  if (!state.account) { await connectWallet(); if (!state.account) return; }
+  if (!window.ethereum || !window.ethers) {
+    toast({ type: 'error', title: '钱包/ethers 未加载' });
+    return;
+  }
+  if (!(await ensureBscChain())) return;
+  const web3 = new ethers.providers.Web3Provider(window.ethereum, 'any');
+  const signer = web3.getSigner();
+  try {
+    return await fn(signer);
+  } catch (e) {
+    const msg = (e && (e.data?.message || e.reason || e.message)) || String(e);
+    let title = label + ' 失败';
+    for (const k in ERROR_MAP) {
+      const name = k.replace('()', '');
+      if (msg.includes(name)) { title = ERROR_MAP[k]; break; }
+    }
+    toast({ type: 'error', title, sub: String(msg).slice(0, 240) });
+  }
+}
+
+async function refreshVault(v) {
+  try {
+    const det = await fetchVaultDetail(v);
+    Object.assign(v, det);
+    if (VAULT_BY_ADDR[v.vault]) Object.assign(VAULT_BY_ADDR[v.vault], det);
+  } catch {}
+  render();
 }
 
 /* ─── Home page ─────────────────────────────────────────────── */
@@ -1450,90 +1526,89 @@ function requireWallet(fn) {
 }
 
 function doTick(v) {
-  requireWallet(() => {
+  withSigner('Tick', async (signer) => {
+    const vault = new ethers.Contract(v.vault, VAULT_ABI, signer);
     toast({ type: 'info', title: 'Tick 已提交', sub: 'pending ' + v.pendingBnb.toFixed(4) + ' BNB · 1% bounty' });
-    setTimeout(() => {
-      toast({ type: 'success', title: 'Tick 成功',
-        sub: '+' + v.tickBounty.toFixed(5) + ' BNB → 你 · 平台币回购已触发' });
-      v.pendingBnb = 0;
-      render();
-    }, 1200);
+    const tx = await vault.tick();
+    await tx.wait();
+    toast({ type: 'success', title: 'Tick 成功', sub: shortAddr(tx.hash) });
+    refreshVault(v);
   });
 }
 
 function doHarvest(v) {
-  requireWallet(() => {
-    if (!v.harvestable) {
-      toast({ type: 'error', title: ERROR_MAP['NotProfitable()'] });
-      return;
-    }
+  if (!v.harvestable) { toast({ type: 'error', title: ERROR_MAP['NotProfitable()'] }); return; }
+  withSigner('Harvest', async (signer) => {
+    const vault = new ethers.Contract(v.vault, VAULT_ABI, signer);
     toast({ type: 'info', title: 'Harvest 已提交', sub: 'equity ' + v.equity.toFixed(3) + ' BNB' });
-    setTimeout(() => {
-      const extracted = v.equity - v.costBasisBnb;
-      toast({ type: 'success', title: 'Harvest 成功',
-        sub: `+${(extracted * 0.01).toFixed(5)} BNB bounty · ${(extracted * 0.79).toFixed(4)} BNB → 质押池` });
-      v.totalStakerRewards += extracted * 0.79;
-      v.equity = v.costBasisBnb;
-      v.pnlPct = 0;
-      v.harvestable = false;
-      render();
-    }, 1400);
+    const tx = await vault.harvest();
+    await tx.wait();
+    toast({ type: 'success', title: 'Harvest 成功', sub: shortAddr(tx.hash) });
+    refreshVault(v);
   });
 }
 
 function doApprove(v) {
-  requireWallet(() => {
+  withSigner('Approve', async (signer) => {
+    const tok = new ethers.Contract(v.tax_token, ERC20_ABI, signer);
     toast({ type: 'info', title: 'Approve 已提交', sub: v.symbol + ' → ' + shortAddr(v.staking) });
-    setTimeout(() => toast({ type: 'success', title: 'Approve 完成', sub: 'allowance = MaxUint256' }), 900);
+    const tx = await tok.approve(v.staking, ethers.constants.MaxUint256);
+    await tx.wait();
+    toast({ type: 'success', title: 'Approve 完成', sub: shortAddr(tx.hash) });
   });
 }
 
 function doStake(v) {
-  requireWallet(() => {
-    const amt = Number(stakeUI.stakeInput);
-    if (!amt || amt <= 0) { toast({ type: 'error', title: ERROR_MAP['Zero()'] }); return; }
-    if (amt > v.myBalance) { toast({ type: 'error', title: '余额不足' }); return; }
-    toast({ type: 'info', title: 'Stake 已提交', sub: fmtTokens(amt) + ' ' + v.symbol });
-    setTimeout(() => {
-      v.myBalance -= amt;
-      v.myStaked += amt;
-      v.totalStaked += amt;
-      v.myCooldown = 1800;
-      stakeUI.stakeInput = '';
-      toast({ type: 'success', title: 'Stake 成功', sub: '冷却 30 min 已开始' });
-      render();
-    }, 1000);
+  const raw = String(stakeUI.stakeInput || '').trim();
+  if (!raw || Number(raw) <= 0) { toast({ type: 'error', title: '请输入质押数量' }); return; }
+  if (Number(raw) > v.myBalance) { toast({ type: 'error', title: '余额不足' }); return; }
+  withSigner('Stake', async (signer) => {
+    const dec = v.decimals || 18;
+    const amt = ethers.utils.parseUnits(raw, dec);
+    const tok = new ethers.Contract(v.tax_token, ERC20_ABI, signer);
+    const allowance = await tok.allowance(state.account, v.staking);
+    if (allowance.lt(amt)) {
+      toast({ type: 'info', title: '先 Approve · 再 Stake', sub: v.symbol + ' → ' + shortAddr(v.staking) });
+      const ap = await tok.approve(v.staking, ethers.constants.MaxUint256);
+      await ap.wait();
+    }
+    const stk = new ethers.Contract(v.staking, STAKING_ABI, signer);
+    toast({ type: 'info', title: 'Stake 已提交', sub: raw + ' ' + v.symbol });
+    const tx = await stk.stake(amt);
+    await tx.wait();
+    stakeUI.stakeInput = '';
+    toast({ type: 'success', title: 'Stake 成功', sub: '冷却 30 min 已开始' });
+    refreshVault(v);
   });
 }
 
 function doUnstake(v) {
-  requireWallet(() => {
-    const amt = Number(stakeUI.unstakeInput);
-    if (!amt || amt <= 0) { toast({ type: 'error', title: ERROR_MAP['Zero()'] }); return; }
-    if (amt > v.myStaked) { toast({ type: 'error', title: '质押量不足' }); return; }
+  const raw = String(stakeUI.unstakeInput || '').trim();
+  if (!raw || Number(raw) <= 0) { toast({ type: 'error', title: '请输入提取数量' }); return; }
+  if (Number(raw) > v.myStaked) { toast({ type: 'error', title: '质押量不足' }); return; }
+  withSigner('Unstake', async (signer) => {
+    const dec = v.decimals || 18;
+    const amt = ethers.utils.parseUnits(raw, dec);
+    const stk = new ethers.Contract(v.staking, STAKING_ABI, signer);
     toast({ type: 'info', title: 'Unstake 已提交' });
-    setTimeout(() => {
-      v.myBalance += amt;
-      v.myStaked -= amt;
-      v.totalStaked -= amt;
-      stakeUI.unstakeInput = '';
-      toast({ type: 'success', title: 'Unstake 成功', sub: '+' + fmtTokens(amt) + ' ' + v.symbol + ' → 钱包' });
-      render();
-    }, 1000);
+    const tx = await stk.unstake(amt);
+    await tx.wait();
+    stakeUI.unstakeInput = '';
+    toast({ type: 'success', title: 'Unstake 成功', sub: shortAddr(tx.hash) });
+    refreshVault(v);
   });
 }
 
 function doClaim(v) {
-  requireWallet(() => {
-    if (v.myCooldown > 0) { toast({ type: 'error', title: ERROR_MAP['COOLDOWN'] }); return; }
-    if (v.myEarned <= 0)  { toast({ type: 'error', title: ERROR_MAP['NO_REWARD'] }); return; }
+  if (v.myCooldown > 0) { toast({ type: 'error', title: ERROR_MAP['COOLDOWN'] }); return; }
+  if (v.myEarned <= 0)  { toast({ type: 'error', title: ERROR_MAP['NO_REWARD'] }); return; }
+  withSigner('Claim', async (signer) => {
+    const stk = new ethers.Contract(v.staking, STAKING_ABI, signer);
     toast({ type: 'info', title: 'Claim 已提交' });
-    setTimeout(() => {
-      const amt = v.myEarned;
-      v.myEarned = 0;
-      toast({ type: 'success', title: 'Claim 成功', sub: '+' + amt.toFixed(5) + ' BNB → 钱包' });
-      render();
-    }, 900);
+    const tx = await stk.claim();
+    await tx.wait();
+    toast({ type: 'success', title: 'Claim 成功', sub: shortAddr(tx.hash) });
+    refreshVault(v);
   });
 }
 
