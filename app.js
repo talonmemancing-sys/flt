@@ -523,7 +523,7 @@ function renderHeader() {
   const header = el('header', { class: 'header' },
     el('div', { class: 'header-inner' },
       el('a', { class: 'brand', href: '#/' },
-        el('div', { class: 'brand-mark', html: '<img src="uploads/logo.png" alt="FALT" />' }),
+        el('div', { class: 'brand-mark', html: '<img src="./logo.png" alt="FALT" />' }),
         el('div', null,
           el('div', { class: 'brand-name' }, 'FALT', el('span', { style: 'color:var(--text-muted);font-weight:400;margin-left:6px' }, 'LongVault')),
         ),
