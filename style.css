@@ -155,6 +155,7 @@ input { font-family: inherit; }
   position: relative;
 }
 .brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand-mark img { width: 100%; height: 100%; display: block; object-fit: contain; filter: drop-shadow(0 0 8px var(--accent-glow)); }
 .brand-mark .wing { fill: var(--accent); filter: drop-shadow(0 0 8px var(--accent-glow)); }
 .brand-name { color: var(--text); }
 .brand-sub  { color: var(--text-muted); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }

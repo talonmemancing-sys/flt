@@ -128,15 +128,15 @@ function saveTweaks() {
 
 function applyTweaks() {
   const t = Object.assign({
-    accent: 'violet',  // FLT brand violet
+    accent: 'violet',  // FALT brand violet
     bg: 'grid',
   }, state.tweaks);
   document.documentElement.setAttribute('data-accent', t.accent);
   document.documentElement.setAttribute('data-bg', t.bg);
 }
 
-// Butterfly mark — FLT brand (4-petal stylized form)
-const BUTTERFLY_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="FLT">
+// Butterfly mark — FALT brand (4-petal stylized form)
+const BUTTERFLY_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="FALT">
   <g transform="translate(50 50)">
     <path class="wing" d="M0 0 C -8 -12 -22 -38 -38 -42 C -46 -44 -50 -38 -48 -28 C -46 -16 -32 -4 -16 -2 C -8 -1 -3 -2 0 0 Z"/>
     <path class="wing" d="M0 0 C  8 -12  22 -38  38 -42 C  46 -44  50 -38  48 -28 C  46 -16  32 -4  16 -2 C  8 -1  3 -2 0 0 Z"/>
@@ -523,9 +523,9 @@ function renderHeader() {
   const header = el('header', { class: 'header' },
     el('div', { class: 'header-inner' },
       el('a', { class: 'brand', href: '#/' },
-        el('div', { class: 'brand-mark', html: BUTTERFLY_SVG }),
+        el('div', { class: 'brand-mark', html: '<img src="uploads/logo.png" alt="FALT" />' }),
         el('div', null,
-          el('div', { class: 'brand-name' }, 'FLT', el('span', { style: 'color:var(--text-muted);font-weight:400;margin-left:6px' }, 'LongVault')),
+          el('div', { class: 'brand-name' }, 'FALT', el('span', { style: 'color:var(--text-muted);font-weight:400;margin-left:6px' }, 'LongVault')),
         ),
       ),
       el('nav', { class: 'header-nav' },
