@@ -606,11 +606,24 @@ function bindWalletListeners() {
   _walletListenersBound = true;
   window.ethereum.on('accountsChanged', (accounts) => {
     state.account = accounts[0] || null;
+    refreshActiveVault();
     buildShell(); render();
   });
   window.ethereum.on('chainChanged', () => {
+    refreshActiveVault();
     buildShell(); render();
   });
+}
+
+// After account/chain change, the cached vault detail has stale per-user fields
+// (myBalance/myStaked/myEarned/myCooldown were captured with the previous account).
+// Re-fetch on-chain data for the vault we're currently viewing so balances reflect
+// the new account immediately.
+function refreshActiveVault() {
+  const route = currentRoute();
+  if (route.name !== 'detail') return;
+  const v = VAULT_BY_ADDR[route.addr];
+  if (v) refreshVault(v);
 }
 
 async function connectWallet() {
@@ -625,6 +638,7 @@ async function connectWallet() {
     await ensureBscChain();
     toast({ type: 'success', title: '钱包已连接', sub: shortAddr(state.account) });
     buildShell(); render();
+    refreshActiveVault();
   } catch (e) {
     toast({ type: 'error', title: '连接失败', sub: e.message || String(e) });
   }
