@@ -1135,7 +1135,6 @@ function renderDetail(v) {
   const tickDisabled = v.pendingBnb < 0.01 || oracleState === 'stale';
   const harvestPct = v.costBasisBnb > 0 ? Math.min((v.equity / (v.costBasisBnb * 1.2)) * 100, 999) : 0;
   const harvestReady = v.harvestable && oracleState !== 'stale';
-  const isCreator = state.account && state.account.toLowerCase() === v.creator.toLowerCase();
 
   return el('main', { class: 'page' },
     el('div', { class: 'crumb' },
@@ -1303,9 +1302,6 @@ function renderDetail(v) {
       renderStakeForm(v),
     ),
 
-    // Creator-only panel
-    isCreator ? renderCreatorPanel(v) : null,
-
     // Recent events
     renderEventsPanel(v),
   );
@@ -1363,35 +1359,6 @@ function renderStakeForm(v) {
         ),
         cooling ? el('div', { class: 'cooldown-bar' }, el('div', { class: 'cooldown-fill', style: `width:${100 - (v.myCooldown / 1800 * 100)}%` })) : null,
       ),
-    ),
-  );
-}
-
-function renderCreatorPanel(v) {
-  return el('div', { class: 'creator-panel' },
-    el('div', { class: 'panel-head' },
-      el('div', { class: 'panel-title' },
-        el('span', { class: 'h', style: 'color:var(--warn)' }, '创建者特权'), 'CREATOR ONLY · WITHDRAW'),
-      el('span', { class: 'pill', style: 'color:var(--warn);border-color:rgba(244,177,60,0.4)' },
-        el('span', { class: 'pdot', style: 'background:var(--warn)' }),
-        '危险操作'),
-    ),
-    el('div', { class: 'dim', style: 'font-size:12px;margin-bottom:16px' },
-      '调用 ', el('span', { class: 'mono', style: 'color:var(--text)' }, 'vault.withdraw(token, to, amount)'),
-      ' · 仅 ',  el('span', { class: 'mono', style: 'color:var(--text)' }, 'creator() == msg.sender'),
-      ' 可调,会从金库直接转出资产。',
-    ),
-    el('div', { style: 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px' },
-      el('div', { class: 'amount-input' },
-        el('input', { id: 'wd-token', type: 'text', placeholder: '0x... (空 = BNB)' }),
-      ),
-      el('div', { class: 'amount-input' },
-        el('input', { id: 'wd-to', type: 'text', placeholder: 'to 地址' }),
-      ),
-      el('div', { class: 'amount-input' },
-        el('input', { id: 'wd-amt', type: 'text', placeholder: '0.0' }),
-      ),
-      el('button', { class: 'btn', style: 'background:var(--warn);color:#08090c', onclick: () => doWithdraw(v) }, '提款'),
     ),
   );
 }
@@ -1610,16 +1577,6 @@ function doClaim(v) {
     toast({ type: 'success', title: 'Claim 成功', sub: shortAddr(tx.hash) });
     refreshVault(v);
   });
-}
-
-function doWithdraw(v) {
-  const token = $('#wd-token').value.trim();
-  const to    = $('#wd-to').value.trim();
-  const amt   = $('#wd-amt').value.trim();
-  if (!to || !amt) { toast({ type: 'error', title: '参数不完整' }); return; }
-  if (!confirm('⚠ 这是创建者特权,会从金库直接转出资产。继续吗?\n\nToken: ' + (token || 'BNB') + '\nTo: ' + to + '\nAmount: ' + amt)) return;
-  toast({ type: 'info', title: '提款已提交', sub: amt + ' → ' + shortAddr(to) });
-  setTimeout(() => toast({ type: 'success', title: '提款完成' }), 900);
 }
 
 /* ─── 404 ───────────────────────────────────────────────────── */

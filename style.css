@@ -887,15 +887,6 @@ input { font-family: inherit; }
   font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: var(--font-mono);
 }
 
-/* Creator panel */
-.creator-panel {
-  background: linear-gradient(180deg, rgba(244,177,60,0.04), transparent);
-  border: 1px solid rgba(244,177,60,0.3);
-  border-radius: var(--r-md);
-  padding: var(--sp-6);
-}
-.creator-panel .panel-title { color: var(--warn); }
-
 /* Events log */
 .events {
   background: var(--surface);
